@@ -146,9 +146,9 @@ def test_message_groups_by_pier_with_required_fields() -> None:
 
     assert ":airplane:" in msg
     assert "ATL Pier View" in msg
-    assert ":bag: *Pier 43*" in msg
-    assert ":bag: *Pier 48*" in msg
-    assert ":bag: *Pier 59*" in msg
+    assert "*Pier 43*" in msg
+    assert "*Pier 48*" in msg
+    assert "*Pier 59*" in msg
     # Out-of-range piers must not appear
     assert "Pier 71" not in msg
     assert "Pier 39" not in msg

@@ -74,7 +74,7 @@ def build_message(
         lines.append("_No upcoming in-scope outbound flights with a pier assignment._")
     else:
         for pier in sorted(grouped.keys(), key=_pier_sort_key):
-            lines.append(f":bag: *Pier {pier}*")
+            lines.append(f"*Pier {pier}*")
             for flight in grouped[pier]:
                 lines.append(_format_flight_line(flight, cfg, tz))
             lines.append("")
