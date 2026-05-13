@@ -1,0 +1,51 @@
+name: Post pier view to Slack
+
+on:
+  schedule:
+    # Every 20 minutes. GitHub may delay cron during high load — that's acceptable
+    # for a 20-min refresh cadence.
+    - cron: "*/20 * * * *"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Render to logs only (no Slack post)?"
+        required: false
+        default: "false"
+
+concurrency:
+  group: post-pier-view
+  cancel-in-progress: false
+
+jobs:
+  post:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Post pier view
+        env:
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+          SLACK_CHANNEL: ${{ secrets.SLACK_CHANNEL }}
+          FLEET_API_BASE: ${{ vars.FLEET_API_BASE }}
+          AIRPORT: ${{ vars.AIRPORT }}
+          HOURS_FORWARD: ${{ vars.HOURS_FORWARD }}
+          IN_SCOPE_GATES: ${{ vars.IN_SCOPE_GATES }}
+          HAULOUT_LEAD_MIN: ${{ vars.HAULOUT_LEAD_MIN }}
+          DISPLAY_TZ: ${{ vars.DISPLAY_TZ }}
+        run: |
+          if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
+            python -m flightassign_pier --dry-run --verbose
+          else
+            python -m flightassign_pier --verbose
+          fi
