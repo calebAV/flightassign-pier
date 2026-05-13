@@ -56,6 +56,12 @@ class Config:
         )
     )
 
+    # Pier scope: only show flights whose departure bag pier number falls in
+    # [pier_min, pier_max] inclusive. Flights with a non-numeric pier or a pier
+    # outside this range are excluded.
+    pier_min: int = field(default_factory=lambda: _env_int("PIER_MIN", 40))
+    pier_max: int = field(default_factory=lambda: _env_int("PIER_MAX", 60))
+
     haulout_lead_min: int = field(default_factory=lambda: _env_int("HAULOUT_LEAD_MIN", 55))
     display_tz: str = field(default_factory=lambda: _env("DISPLAY_TZ", "America/New_York"))
 
@@ -81,6 +87,16 @@ class Config:
                 if g == t:
                     return True
         return False
+
+    def pier_is_in_scope(self, pier: str | None) -> bool:
+        """Return True if `pier` is a numeric string within [pier_min, pier_max]."""
+        if not pier:
+            return False
+        try:
+            n = int(str(pier).strip())
+        except ValueError:
+            return False
+        return self.pier_min <= n <= self.pier_max
 
 
 CONFIG = Config()

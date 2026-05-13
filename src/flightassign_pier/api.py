@@ -9,7 +9,7 @@ https://aerovect.slack.com/archives/D0AMU5093GR/p1774968192116289
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Iterable, List, Optional
 
 import requests
@@ -32,6 +32,9 @@ class Flight:
     @property
     def departure_sort_key(self) -> float:
         return self.departure_utc.timestamp()
+
+    def haulout_utc(self, lead_min: int) -> datetime:
+        return self.departure_utc - timedelta(minutes=lead_min)
 
 
 # --------------------------------------------------------------------------- #
@@ -85,21 +88,20 @@ def _parse_flight(record: dict) -> Optional[Flight]:
     )
 
 
-def _in_scope(flight: Flight, cfg: Config) -> bool:
-    return cfg.gate_is_in_scope(flight.gate)
-
-
 def list_in_scope_outbound(
     cfg: Config = CONFIG,
     *,
     now_utc: Optional[datetime] = None,
     api_payload: Optional[dict] = None,
 ) -> List[Flight]:
-    """Return in-scope outbound flights, sorted by departure time.
+    """Return in-scope, actionable outbound flights, sorted by departure time.
 
-    - Drops flights without a departure pier or gate
-    - Drops flights whose departure is already in the past (relative to ``now_utc``)
-    - Filters gates to the configured in-scope set
+    Filters applied (in order):
+      - Drops flights without a departure pier, gate, or other required fields
+      - Drops flights whose gate is not in the configured in-scope set
+      - Drops flights whose pier is not in the configured [pier_min, pier_max] range
+      - Drops non-actionable flights: haulout time (dept - HAULOUT_LEAD_MIN) is in
+        the past. This guarantees every flight shown still has time to be acted on.
 
     Parameters
     ----------
@@ -115,9 +117,13 @@ def list_in_scope_outbound(
         flight = _parse_flight(record)
         if flight is None:
             continue
-        if flight.departure_utc < now_utc:
+        if not cfg.gate_is_in_scope(flight.gate):
             continue
-        if not _in_scope(flight, cfg):
+        if not cfg.pier_is_in_scope(flight.pier):
+            continue
+        # Actionable: haulout hasn't passed yet. This also implicitly drops
+        # past-departure flights, since haulout is always < departure.
+        if flight.haulout_utc(cfg.haulout_lead_min) < now_utc:
             continue
         flights.append(flight)
 
