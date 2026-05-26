@@ -2,13 +2,13 @@
 
 A lightweight companion to [FlightAssign](https://aerovect.slack.com/archives/C0AQEA7NR28) that pulls live outbound flights from the AeroVect Fleet API and posts a Slack message **grouped by pier** (instead of by operator).
 
-The post is intended to give pier-side teams a quick read on what bags are coming, which gate they're heading to, and when haulout should start — refreshed every 20 minutes.
+The post is intended to give pier-side teams a quick read on what bags are coming, which gate they're heading to, and when haulout should start — refreshed every 20 minutes by cron-job.org.
 
 ---
 
 ## What it shows
 
-For each pier (sorted numerically), the bot lists every upcoming in-scope outbound flight with:
+For each pier (sorted numerically), the bot lists every upcoming actionable outbound flight with:
 
 - **Haulout time** — 55 minutes before scheduled departure
 - **Departure time**
@@ -21,32 +21,59 @@ Example Slack post:
 ```
 :airplane: ATL Pier View — Tue 5/13, 3:12 PM EDT
 
-:bag: Pier 43
-  • 3:40 PM haulout / 4:35 PM dept — DL376 → PNS | Gate A07
-  • 4:55 PM haulout / 5:50 PM dept — DL956 → DEN | Gate A17
+*Pier 43*
+  • 3:25 PM haulout / 4:20 PM dept — DL376 → PNS | Gate A07
+  • 4:55 PM haulout / 5:50 PM dept — DL956 → DEN | Gate A17 ⚠
 
-:bag: Pier 48
-  • 3:46 PM haulout / 4:41 PM dept — DL2051 → HOU | Gate A01
-  ...
+*Pier 48*
+  • 3:05 PM haulout / 4:00 PM dept — DL2051 → HOU | Gate A01
+
+*Pier 49*
+  • 3:35 PM haulout / 4:30 PM dept — DL1522 → CMH | Gate A25
+...
 ```
 
-In-scope gates match the existing FlightAssign tool: **T concourse + A01–A18**. Flights without a departure pier are omitted.
+A `⚠` next to a flight means the departure time is estimated (not yet confirmed).
+
+---
+
+## Scope
+
+Three filters control what makes it into a post:
+
+| Filter | Default | Notes |
+| --- | --- | --- |
+| Concourses | `T` + all `A` gates | Picks up the entire A concourse (A-south + A-north) plus the T concourse. Excludes B/C/D/E/F. |
+| Pier range | `40`–`60` (inclusive) | Numeric pier numbers only. Flights with `"N/A"` or no pier are excluded. |
+| Actionable only | yes | Drops any flight whose haulout time (dept − 55 min) has already passed. |
+
+All three are tunable via env vars — see [Configuration](#configuration) below.
 
 ---
 
 ## How it runs
 
-There are two supported run modes:
+GitHub Actions handles the workflow; cron-job.org handles the schedule. The flow:
 
-1. **GitHub Actions (recommended)** — a cron workflow runs `python -m flightassign_pier` every 20 minutes (`*/20 * * * *`). No server to manage.
-2. **Local / one-shot** — `python -m flightassign_pier` posts a single message and exits. Use this for testing.
-3. **Long-running loop** — `python -m flightassign_pier --loop` re-posts every 20 minutes in-process until interrupted. Useful if you'd rather host this on a small VM.
+1. **cron-job.org** fires a POST every 20 minutes to GitHub's `workflow_dispatch` API.
+2. **GitHub Actions** spins up an Ubuntu runner, installs deps, runs `python -m flightassign_pier`.
+3. The script fetches flights, filters, formats, and posts to Slack.
+
+cron-job.org is used instead of GitHub's built-in `schedule:` cron because GitHub's scheduler can drift 0–15 minutes per run. cron-job.org fires on the dot.
+
+For local development you can also run it directly:
+
+```bash
+python -m flightassign_pier --dry-run    # print to stdout, don't post
+python -m flightassign_pier              # post once to Slack
+python -m flightassign_pier --loop       # post every 20 min in-process
+```
 
 ---
 
 ## Setup
 
-### 1. Clone & install
+### 1. Clone & install locally (optional, for testing)
 
 ```bash
 git clone https://github.com/calebAV/flightassign-pier.git
@@ -54,55 +81,80 @@ cd flightassign-pier
 python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
+pip install -e .
 ```
 
-To push this initial commit:
+Copy `.env.example` to `.env` and fill in `SLACK_BOT_TOKEN` to test locally.
 
-```bash
-cd flightassign-pier
-git init
-git add .
-git commit -m "Initial commit: pier-grouped FlightAssign"
-git branch -M main
-git remote add origin https://github.com/calebAV/flightassign-pier.git
-git push -u origin main
-```
+### 2. Slack — create a channel and invite the bot
 
-### 2. Configure secrets
+1. In Slack, create the channel (`flight-assign-piers` or whatever name you prefer).
+2. Run `/invite @FlightAssign Bot` in the channel.
+3. Grab the channel ID from the channel URL: `https://aerovect.slack.com/archives/<CHANNEL_ID>`.
 
-Copy `.env.example` to `.env` and fill in:
+### 3. GitHub — set secrets
 
-| Var | What it is |
+In Settings → Secrets and variables → Actions, add two secrets:
+
+| Name | Value |
 | --- | --- |
-| `SLACK_BOT_TOKEN` | Bot token for the FlightAssign Bot Slack app (starts with `xoxb-`) |
-| `SLACK_CHANNEL` | Channel to post to. Default: `#flight-assign-piers`. Make sure the bot is invited to the channel. |
-| `FLEET_API_BASE` | Defaults to `https://beta.api.fleet.aerovect.com`. Override if/when prod-equivalent endpoint is preferred. |
-| `AIRPORT` | Defaults to `ATL`. |
-| `HOURS_FORWARD` | How far ahead to look. Defaults to `4` (matches Fleet API default). |
-| `IN_SCOPE_GATES` | Comma-separated. Defaults to `T,A01,A02,A03,A04,A05,A06,A07,A08,A09,A10,A11,A12,A13,A14,A15,A16,A17,A18`. `T` is a prefix match (covers `T01`, `T01A`, `T02`, ...). |
-| `HAULOUT_LEAD_MIN` | Defaults to `55`. |
+| `SLACK_BOT_TOKEN` | `xoxb-...` token from the FlightAssign Bot app |
+| `SLACK_CHANNEL` | The channel ID (e.g., `C0B3G4F2YP7`). IDs are preferred over `#names`. |
 
-For GitHub Actions, set these as **repository secrets** under Settings → Secrets and variables → Actions.
+The other env vars have working defaults — only override if you need to.
 
-### 3. Run it once locally
+### 4. cron-job.org — schedule the trigger
 
-```bash
-python -m flightassign_pier --dry-run     # prints to stdout, doesn't post
-python -m flightassign_pier               # posts a single message to Slack
-```
+1. Create a fine-grained GitHub PAT scoped to this repo, with **Actions: Read and write** permission.
+2. In cron-job.org, create a job with:
+   - **URL:** `https://api.github.com/repos/calebAV/flightassign-pier/actions/workflows/post.yml/dispatches`
+   - **Method:** `POST`
+   - **Headers:**
+     - `Authorization: Bearer <your-PAT>`
+     - `Accept: application/vnd.github+json`
+     - `X-GitHub-Api-Version: 2022-11-28`
+   - **Body:** `{"ref": "main"}`
+   - **Schedule:** every 20 minutes
+3. Run it once manually to confirm — cron-job.org should show `204 No Content` and a new run should appear in GitHub Actions.
 
-### 4. Schedule via GitHub Actions
+---
 
-The included workflow at `.github/workflows/post.yml` runs every 20 minutes automatically and exposes a manual `workflow_dispatch` button. Just push the repo and add the secrets above.
+## Configuration
+
+All settings are env-var driven. For GitHub Actions, set these as **repository variables** (Settings → Secrets and variables → Actions → Variables). For local dev, set them in `.env`.
+
+| Var | Default | What it does |
+| --- | --- | --- |
+| `SLACK_BOT_TOKEN` | — | Required. `xoxb-...` token. |
+| `SLACK_CHANNEL` | `#flight-assign-piers` | Channel ID or `#name`. |
+| `FLEET_API_BASE` | `https://beta.api.fleet.aerovect.com` | Fleet API base URL. |
+| `AIRPORT` | `ATL` | Airport code. |
+| `HOURS_FORWARD` | `4` | How far ahead the API pulls. |
+| `IN_SCOPE_GATES` | `T,A` | Comma-separated. Single-letter tokens are prefix matches (T → T01, T01A...; A → A01...A30). Multi-character tokens are exact matches (e.g., `A01`). |
+| `PIER_MIN` | `40` | Lower bound (inclusive). |
+| `PIER_MAX` | `60` | Upper bound (inclusive). |
+| `HAULOUT_LEAD_MIN` | `55` | Minutes before departure that haulout starts. |
+| `DISPLAY_TZ` | `America/New_York` | IANA timezone for displayed times. |
+
+Empty-string env vars are treated as unset — defaults always kick in. (This matters because GitHub Actions passes `${{ vars.X }}` as `""` when X isn't defined.)
+
+### Adjusting scope without code changes
+
+Common Ops adjustments are repo-variable overrides, no commit needed:
+
+- **Narrow piers (e.g., during a single pier-zone test):** set `PIER_MIN`/`PIER_MAX` to a tighter range.
+- **Exclude A-international (A26–A30):** set `IN_SCOPE_GATES` to an explicit list like `T,A01,A02,A03,A04,A05,A06,A07,A08,A09,A10,A11,A12,A13,A14,A15,A16,A17,A18,A19,A20,A21,A22,A23,A24,A25`.
+- **Different haulout lead time:** override `HAULOUT_LEAD_MIN`.
 
 ---
 
 ## Design notes
 
-- **Pier vs. gate**: piers are bag rooms; gates are where the aircraft is parked. One pier may feed many gates and one gate may pull bags from different piers throughout the day. Grouping by pier is the natural unit for pier-side operators.
-- **55-minute haulout lead**: confirmed default. Tunable via `HAULOUT_LEAD_MIN` env var if Ops wants to A/B test.
-- **No assignment logic**: this tool deliberately does *not* assign flights to people. It's a read-only schedule view. The operator-assignment side stays in the original FlightAssign repo.
-- **Stateless**: each run is independent. No DB, no state file. The cron schedule is the only "memory."
+- **Pier vs. gate:** piers are bag rooms; gates are where the aircraft is parked. One pier may feed many gates and one gate may pull bags from different piers throughout the day. Grouping by pier is the natural unit for pier-side operators.
+- **Pier range as primary scope:** the gate filter is intentionally loose (any T or A gate). The pier range (40–60) is what actually defines "which flights are ours." This is why A-north gates are included automatically — they hit our piers.
+- **Actionable-only:** every post drops flights whose haulout has already passed. Over the 20-min cycle, old flights naturally fall off — no manual cleanup or "next-shift" logic needed.
+- **No assignment logic:** this tool deliberately does *not* assign flights to people. It's a read-only schedule view. The operator-assignment side stays in the original FlightAssign repo.
+- **Stateless:** each run is independent. No DB, no state file.
 
 ---
 
@@ -118,10 +170,20 @@ flightassign-pier/
 │   ├── post.py            # Slack post + scheduling
 │   └── config.py          # Env-driven config
 ├── tests/
-│   └── test_format.py
+│   └── test_format.py     # 11 unit tests
 ├── .github/workflows/post.yml
 ├── .env.example
 ├── requirements.txt
 ├── pyproject.toml
 └── README.md
 ```
+
+---
+
+## Running the tests
+
+```bash
+PYTHONPATH=src python -m pytest tests/ -v
+```
+
+Tests cover the gate/pier/actionable filters, message formatting, and boundary cases.
