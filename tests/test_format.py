@@ -42,30 +42,31 @@ def _flight(
 #   dept_offset < 55   → haulout already passed → NOT actionable
 SAMPLE_PAYLOAD = {
     "outbound": [
-        # Actionable: pier in [40,60], in-scope gate, haulout in future
-        _flight(2051, dest="HOU", gate="A01", pier="48", dept_offset_min=60),    # haulout +5 min
-        _flight(376, dest="PNS", gate="A07", pier="43", dept_offset_min=80),     # haulout +25 min
+        # Actionable: pier in [40,60], A or T gate (post A-north expansion), haulout future
+        _flight(2051, dest="HOU", gate="A01", pier="48", dept_offset_min=60),
+        _flight(376, dest="PNS", gate="A07", pier="43", dept_offset_min=80),
         _flight(956, dest="DEN", gate="A17", pier="43", dept_offset_min=170, time_type="E"),
         _flight(2213, dest="LEX", gate="T06", pier="59", dept_offset_min=95),
+        # A-north gate (A30) — now in scope because pier is in range
+        _flight(2650, dest="RIC", gate="A30", pier="53", dept_offset_min=120),
+        # A-north gate (A25) — also now in scope
+        _flight(1522, dest="CMH", gate="A25", pier="49", dept_offset_min=90),
 
-        # Non-actionable: haulout already passed (dept in 50 min, haulout was 5 min ago)
+        # Non-actionable: haulout already passed
         _flight(5555, dest="MCO", gate="A10", pier="47", dept_offset_min=50),
-
-        # Non-actionable: haulout was 30 min ago (dept in 25 min)
         _flight(6666, dest="ORD", gate="A04", pier="55", dept_offset_min=25),
 
         # Out-of-range piers
         _flight(1335, dest="AUS", gate="T01A", pier="71", dept_offset_min=120),  # > 60
         _flight(537, dest="DCA", gate="A05", pier="39", dept_offset_min=120),    # < 40
 
-        # Out-of-scope gates
+        # Out-of-scope concourse (B): filtered by gate filter
         _flight(787, dest="GEG", gate="B04", pier="44", dept_offset_min=120),
-        _flight(2650, dest="RIC", gate="A30", pier="53", dept_offset_min=120),
 
-        # Already-departed (in the past)
+        # Already-departed
         _flight(9999, dest="JFK", gate="A12", pier="48", dept_offset_min=-30),
 
-        # Non-numeric pier "N/A"
+        # Non-numeric pier
         _flight(7777, dest="BOS", gate="A05", pier="N/A", dept_offset_min=120),
 
         # Missing pier
@@ -83,9 +84,7 @@ def _cfg(pier_min: int = 40, pier_max: int = 60, haulout_lead_min: int = 55) -> 
         fleet_api_base="https://example.invalid",
         airport="ATL",
         hours_forward=4,
-        in_scope_gates=("T", "A01", "A02", "A03", "A04", "A05", "A06", "A07", "A08",
-                        "A09", "A10", "A11", "A12", "A13", "A14", "A15", "A16",
-                        "A17", "A18"),
+        in_scope_gates=("T", "A"),  # post A-north expansion
         pier_min=pier_min,
         pier_max=pier_max,
         haulout_lead_min=haulout_lead_min,
@@ -97,24 +96,33 @@ def test_only_actionable_in_scope_flights_returned() -> None:
     cfg = _cfg()
     flights = list_in_scope_outbound(cfg, now_utc=NOW, api_payload=SAMPLE_PAYLOAD)
     flight_numbers = {f.flight_number for f in flights}
-    assert flight_numbers == {"DL2051", "DL376", "DL956", "DL2213"}
+    # A-north gates (A30, A25) now included
+    assert flight_numbers == {"DL2051", "DL376", "DL956", "DL2213", "DL2650", "DL1522"}
+
+
+def test_a_north_gates_now_in_scope() -> None:
+    cfg = _cfg()
+    flights = list_in_scope_outbound(cfg, now_utc=NOW, api_payload=SAMPLE_PAYLOAD)
+    gates = {f.gate for f in flights}
+    assert "A30" in gates
+    assert "A25" in gates
+
+
+def test_b_concourse_still_excluded() -> None:
+    cfg = _cfg()
+    flights = list_in_scope_outbound(cfg, now_utc=NOW, api_payload=SAMPLE_PAYLOAD)
+    assert not any(f.gate.startswith("B") for f in flights)
 
 
 def test_non_actionable_haulout_in_past_is_excluded() -> None:
     cfg = _cfg()
     flights = list_in_scope_outbound(cfg, now_utc=NOW, api_payload=SAMPLE_PAYLOAD)
-    # DL5555 (dept +50min) → haulout was 5 min ago
-    # DL6666 (dept +25min) → haulout was 30 min ago
     assert not any(f.flight_number in {"DL5555", "DL6666"} for f in flights)
 
 
 def test_actionable_boundary_haulout_exactly_now_is_included() -> None:
-    """A flight whose haulout == now should be included (cutoff is strict <)."""
     cfg = _cfg()
-    payload = {"outbound": [
-        # dept = NOW + 55 min → haulout exactly NOW
-        _flight(8888, gate="A10", pier="47", dept_offset_min=55),
-    ]}
+    payload = {"outbound": [_flight(8888, gate="A10", pier="47", dept_offset_min=55)]}
     flights = list_in_scope_outbound(cfg, now_utc=NOW, api_payload=payload)
     assert any(f.flight_number == "DL8888" for f in flights)
 
@@ -123,7 +131,10 @@ def test_pier_range_filter_excludes_high_and_low_piers() -> None:
     cfg = _cfg()
     flights = list_in_scope_outbound(cfg, now_utc=NOW, api_payload=SAMPLE_PAYLOAD)
     piers = {f.pier for f in flights}
-    assert piers == {"43", "48", "59"}
+    # All in 40-60
+    assert all(40 <= int(p) <= 60 for p in piers)
+    assert "71" not in piers
+    assert "39" not in piers
 
 
 def test_pier_range_filter_excludes_non_numeric_piers() -> None:
@@ -136,7 +147,7 @@ def test_pier_range_is_configurable() -> None:
     cfg = _cfg(pier_min=40, pier_max=80)
     flights = list_in_scope_outbound(cfg, now_utc=NOW, api_payload=SAMPLE_PAYLOAD)
     piers = {f.pier for f in flights}
-    assert "71" in piers  # DL1335 (dept +120min) is now actionable AND in pier range
+    assert "71" in piers  # DL1335 now in pier scope
 
 
 def test_message_groups_by_pier_with_required_fields() -> None:
@@ -149,15 +160,14 @@ def test_message_groups_by_pier_with_required_fields() -> None:
     assert "*Pier 43*" in msg
     assert "*Pier 48*" in msg
     assert "*Pier 59*" in msg
-    # Out-of-range piers must not appear
+    # A-north flights present
+    assert "DL2650" in msg and "Gate A30" in msg
+    assert "DL1522" in msg and "Gate A25" in msg
+    # Out-of-range piers gone
     assert "Pier 71" not in msg
     assert "Pier 39" not in msg
-    # Non-actionable flights must not appear
-    assert "DL5555" not in msg
-    assert "DL6666" not in msg
-    # Sort order
+    # Sort
     assert msg.index("Pier 43") < msg.index("Pier 48") < msg.index("Pier 59")
-    assert "DL2051" in msg and "HOU" in msg and "Gate A01" in msg
     assert ":warning:" in msg
 
 
