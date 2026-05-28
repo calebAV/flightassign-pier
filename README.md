@@ -76,7 +76,7 @@ python -m flightassign_pier --loop       # post every 20 min in-process
 ### 1. Clone & install locally (optional, for testing)
 
 ```bash
-git clone https://github.com/calebAV/flightassign-pier.git
+git clone https://github.com/servetAV/flightassign-pier.git
 cd flightassign-pier
 python -m venv .venv
 source .venv/bin/activate
@@ -107,7 +107,7 @@ The other env vars have working defaults — only override if you need to.
 
 1. Create a fine-grained GitHub PAT scoped to this repo, with **Actions: Read and write** permission.
 2. In cron-job.org, create a job with:
-   - **URL:** `https://api.github.com/repos/calebAV/flightassign-pier/actions/workflows/post.yml/dispatches`
+   - **URL:** `https://api.github.com/repos/servetAV/flightassign-pier/actions/workflows/post.yml/dispatches`
    - **Method:** `POST`
    - **Headers:**
      - `Authorization: Bearer <your-PAT>`
