@@ -168,6 +168,9 @@ Common Ops adjustments are repo-variable overrides, no commit needed:
 - **Narrow piers (e.g., during a single pier-zone test):** set `PIER_MIN`/`PIER_MAX` to a tighter range.
 - **Exclude A-international (A26–A30):** set `IN_SCOPE_GATES` to an explicit list like `T,A01,A02,A03,A04,A05,A06,A07,A08,A09,A10,A11,A12,A13,A14,A15,A16,A17,A18,A19,A20,A21,A22,A23,A24,A25`.
 - **Different haulout lead time:** override `HAULOUT_LEAD_MIN`.
+- **Move shift boundaries** (e.g., Shift 1 runs 6am–3pm now): override `SHIFT1_WORKED_START_HOUR`, `SHIFT1_WORKED_END_HOUR`, etc. All shift hours are 24-hour local time per `DISPLAY_TZ`.
+- **Start Shift 1 messages earlier or later:** override `SHIFT1_MSG_START_HOUR`.
+- **Keep Shift 2 messages firing right up to 10pm** (instead of stopping at 9pm): set `SHIFT2_MSG_END_HOUR=22`.
 
 ---
 
@@ -193,7 +196,7 @@ flightassign-pier/
 │   ├── post.py            # Slack post + scheduling
 │   └── config.py          # Env-driven config
 ├── tests/
-│   └── test_format.py     # 11 unit tests
+│   └── test_format.py     # 13 unit tests
 ├── .github/workflows/post.yml
 ├── .env.example
 ├── requirements.txt
