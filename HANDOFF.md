@@ -7,9 +7,21 @@ Built and handed off by Caleb Adams, week of 2026-05-26.
 
 ## What this tool does, in two lines
 
-Pulls live outbound flights from the AeroVect Fleet API every 20 minutes and posts a Slack message to `#flight-assign-piers`, grouped by pier (numerically), showing only **actionable** flights at **T or A gates** with **piers 40–60**.
+Pulls live outbound flights from the AeroVect Fleet API every 20 minutes and posts a Slack message to `#flight-assign-piers`, grouped by pier (numerically), showing every actionable flight at **T or A gates** with **piers 40–60** between **now and the end of the current shift**.
 
 This is the pier-side companion to the original FlightAssign tool (which groups by operator and posts to `#flight-assign`). The two are independent — different repos, different post channels.
+
+## Shift windows
+
+Posts only fire during these local-time (America/New_York) windows. Outside them, the workflow runs but no Slack message is sent.
+
+| Shift | Worked hours | Posts fire | Haulouts shown through |
+| --- | --- | --- | --- |
+| Shift 1 | 5:00 AM – 2:00 PM | 4:00 AM – 12:40 PM | 2:00 PM |
+| Shift 2 | 2:00 PM – 10:00 PM | 1:00 PM – 8:40 PM | 10:00 PM |
+| Off-hours | — | No posts | — |
+
+To adjust shift timing (Ops change, new shift schedule, daylight savings handling, etc.), update the `SHIFT*_*_HOUR` repo variables — no code change needed.
 
 ---
 

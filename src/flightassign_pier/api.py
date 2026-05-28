@@ -19,15 +19,13 @@ from .config import CONFIG, Config
 
 @dataclass(frozen=True)
 class Flight:
-    """Normalized in-scope outbound flight."""
-
-    flight_number: str          # e.g. "DL2051"
-    destination: str            # e.g. "HOU"
-    gate: str                   # e.g. "A01"
-    pier: str                   # e.g. "48"
-    departure_utc: datetime     # tz-aware UTC
-    time_type: str              # "A" actual / "E" estimated / "S" scheduled
-    raw: dict                   # full upstream record, for debugging
+    flight_number: str
+    destination: str
+    gate: str
+    pier: str
+    departure_utc: datetime
+    time_type: str
+    raw: dict
 
     @property
     def departure_sort_key(self) -> float:
@@ -37,14 +35,7 @@ class Flight:
         return self.departure_utc - timedelta(minutes=lead_min)
 
 
-# --------------------------------------------------------------------------- #
-# HTTP
-
 def fetch_outbound(cfg: Config = CONFIG, *, timeout: float = 20.0) -> dict:
-    """Hit ``GET /flights`` for outbound flights only.
-
-    Returns the raw decoded JSON. Raises requests.HTTPError on non-2xx.
-    """
     url = f"{cfg.fleet_api_base}/flights"
     params = {
         "airport": cfg.airport,
@@ -57,11 +48,7 @@ def fetch_outbound(cfg: Config = CONFIG, *, timeout: float = 20.0) -> dict:
     return resp.json()
 
 
-# --------------------------------------------------------------------------- #
-# Normalization
-
 def _parse_flight(record: dict) -> Optional[Flight]:
-    """Convert one Fleet API flight dict into a Flight, or None if unusable."""
     flt_num = record.get("flt_num")
     al_cde = record.get("al_cde")
     dest = record.get("leg_dest_ap_cde")
@@ -71,12 +58,10 @@ def _parse_flight(record: dict) -> Optional[Flight]:
 
     if flt_num is None or not al_cde or not dest or not gate or not pier or mission_time_ms is None:
         return None
-
     try:
         dt = datetime.fromtimestamp(int(mission_time_ms) / 1000.0, tz=timezone.utc)
     except (TypeError, ValueError, OSError):
         return None
-
     return Flight(
         flight_number=f"{al_cde}{flt_num}",
         destination=str(dest).strip().upper(),
@@ -92,22 +77,18 @@ def list_in_scope_outbound(
     cfg: Config = CONFIG,
     *,
     now_utc: Optional[datetime] = None,
+    haulout_end_utc: Optional[datetime] = None,
     api_payload: Optional[dict] = None,
 ) -> List[Flight]:
-    """Return in-scope, actionable outbound flights, sorted by departure time.
+    """Return in-scope, actionable outbound flights sorted by departure time.
 
     Filters applied (in order):
-      - Drops flights without a departure pier, gate, or other required fields
+      - Drops flights missing required fields (pier, gate, dept time, etc.)
       - Drops flights whose gate is not in the configured in-scope set
-      - Drops flights whose pier is not in the configured [pier_min, pier_max] range
-      - Drops non-actionable flights: haulout time (dept - HAULOUT_LEAD_MIN) is in
-        the past. This guarantees every flight shown still has time to be acted on.
-
-    Parameters
-    ----------
-    api_payload
-        If provided, use this payload instead of calling the API. Useful for
-        tests and dry runs against fixture data.
+      - Drops flights whose pier is not in [pier_min, pier_max]
+      - Drops non-actionable flights (haulout already passed)
+      - If ``haulout_end_utc`` is set, drops flights whose haulout is after that
+        cutoff. Caller provides this to bound the list to end-of-shift.
     """
     payload = api_payload if api_payload is not None else fetch_outbound(cfg)
     flights: List[Flight] = []
@@ -121,9 +102,10 @@ def list_in_scope_outbound(
             continue
         if not cfg.pier_is_in_scope(flight.pier):
             continue
-        # Actionable: haulout hasn't passed yet. This also implicitly drops
-        # past-departure flights, since haulout is always < departure.
-        if flight.haulout_utc(cfg.haulout_lead_min) < now_utc:
+        haulout = flight.haulout_utc(cfg.haulout_lead_min)
+        if haulout < now_utc:
+            continue
+        if haulout_end_utc is not None and haulout > haulout_end_utc:
             continue
         flights.append(flight)
 
@@ -131,15 +113,11 @@ def list_in_scope_outbound(
     return flights
 
 
-# --------------------------------------------------------------------------- #
-# Helpers for downstream consumers
-
 def total_outbound(payload: dict) -> int:
     return len(payload.get("outbound", []) or [])
 
 
 def group_by_pier(flights: Iterable[Flight]) -> dict[str, List[Flight]]:
-    """Group flights by their pier string. Returns a dict keyed by pier."""
     out: dict[str, List[Flight]] = {}
     for f in flights:
         out.setdefault(f.pier, []).append(f)

@@ -16,38 +16,54 @@ For each pier (sorted numerically), the bot lists every upcoming actionable outb
 - **Destination** (3-letter airport code)
 - **Gate** (departure gate the bags need to reach)
 
-Example Slack post:
+Example Slack post (mid-Shift 1):
 
 ```
-:airplane: ATL Pier View — Tue 5/13, 3:12 PM EDT
+:airplane: ATL Pier View — Shift 1 (5:00 AM – 2:00 PM) — Wed 5/27, 10:00 AM EDT
+Showing flights with haulouts through 2:00 PM (end of shift)
 
 *Pier 43*
-  • 3:25 PM haulout / 4:20 PM dept — DL376 → PNS | Gate A07
-  • 4:55 PM haulout / 5:50 PM dept — DL956 → DEN | Gate A17 ⚠
+  • 10:55 AM haulout / 11:50 AM dept — DL376 → PNS | Gate A07
+  • 1:05 PM haulout / 2:00 PM dept — DL956 → DEN | Gate A17 ⚠
 
 *Pier 48*
-  • 3:05 PM haulout / 4:00 PM dept — DL2051 → HOU | Gate A01
+  • 11:05 AM haulout / 12:00 PM dept — DL2051 → HOU | Gate A01
 
 *Pier 49*
-  • 3:35 PM haulout / 4:30 PM dept — DL1522 → CMH | Gate A25
+  • 12:35 PM haulout / 1:30 PM dept — DL1522 → CMH | Gate A25
 ...
 ```
 
 A `⚠` next to a flight means the departure time is estimated (not yet confirmed).
+Each message contains every actionable flight from now through the end of the
+current shift, so operators see their full remaining day at a glance.
 
 ---
 
 ## Scope
 
-Three filters control what makes it into a post:
+Four filters control what makes it into a post:
 
 | Filter | Default | Notes |
 | --- | --- | --- |
 | Concourses | `T` + all `A` gates | Picks up the entire A concourse (A-south + A-north) plus the T concourse. Excludes B/C/D/E/F. |
 | Pier range | `40`–`60` (inclusive) | Numeric pier numbers only. Flights with `"N/A"` or no pier are excluded. |
 | Actionable only | yes | Drops any flight whose haulout time (dept − 55 min) has already passed. |
+| Within current shift | yes | Drops any flight whose haulout is after the end of the active shift. |
 
-All three are tunable via env vars — see [Configuration](#configuration) below.
+All four are tunable via env vars — see [Configuration](#configuration) below.
+
+### Shift windows
+
+| Shift | Worked hours | Posts fire | Haulouts shown through |
+| --- | --- | --- | --- |
+| Shift 1 | 5:00 AM – 2:00 PM | 4:00 AM – 12:40 PM | 2:00 PM |
+| Shift 2 | 2:00 PM – 10:00 PM | 1:00 PM – 8:40 PM | 10:00 PM |
+| Off-hours | — | No posts | — |
+
+Outside the message windows (roughly 9pm – 4am) the script exits silently without
+posting. cron-job.org still fires every 20 minutes, but the workflow becomes a
+no-op until the next shift window opens.
 
 ---
 
@@ -129,12 +145,19 @@ All settings are env-var driven. For GitHub Actions, set these as **repository v
 | `SLACK_CHANNEL` | `#flight-assign-piers` | Channel ID or `#name`. |
 | `FLEET_API_BASE` | `https://beta.api.fleet.aerovect.com` | Fleet API base URL. |
 | `AIRPORT` | `ATL` | Airport code. |
-| `HOURS_FORWARD` | `4` | How far ahead the API pulls. |
-| `IN_SCOPE_GATES` | `T,A` | Comma-separated. Single-letter tokens are prefix matches (T → T01, T01A...; A → A01...A30). Multi-character tokens are exact matches (e.g., `A01`). |
+| `HOURS_FORWARD` | `12` | How far ahead the API pulls. Sized to cover a full Shift 1 message at 4am (haulouts through 2pm). |
+| `IN_SCOPE_GATES` | `T,A` | Comma-separated. Single-letter tokens are prefix matches. Multi-character tokens are exact matches. |
 | `PIER_MIN` | `40` | Lower bound (inclusive). |
 | `PIER_MAX` | `60` | Upper bound (inclusive). |
 | `HAULOUT_LEAD_MIN` | `55` | Minutes before departure that haulout starts. |
-| `DISPLAY_TZ` | `America/New_York` | IANA timezone for displayed times. |
+| `DISPLAY_TZ` | `America/New_York` | IANA timezone for shift detection and clock display. |
+| `SHIFT1_WORKED_START_HOUR` | `5` | Shift 1 start (24h, local). Label only. |
+| `SHIFT1_WORKED_END_HOUR` | `14` | Shift 1 end (24h, local). Used as haulout cutoff. |
+| `SHIFT1_MSG_START_HOUR` | `4` | First Shift 1 message of the day. |
+| `SHIFT2_WORKED_START_HOUR` | `14` | Shift 2 start. |
+| `SHIFT2_WORKED_END_HOUR` | `22` | Shift 2 end. Used as haulout cutoff. |
+| `SHIFT2_MSG_START_HOUR` | `13` | First Shift 2 message (also the implicit end of Shift 1 messages). |
+| `SHIFT2_MSG_END_HOUR` | `21` | Last Shift 2 message. Set to `22` to keep posting through 10pm. |
 
 Empty-string env vars are treated as unset — defaults always kick in. (This matters because GitHub Actions passes `${{ vars.X }}` as `""` when X isn't defined.)
 
