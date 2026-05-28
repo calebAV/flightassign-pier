@@ -147,8 +147,9 @@ All settings are env-var driven. For GitHub Actions, set these as **repository v
 | `AIRPORT` | `ATL` | Airport code. |
 | `HOURS_FORWARD` | `12` | How far ahead the API pulls. Sized to cover a full Shift 1 message at 4am (haulouts through 2pm). |
 | `IN_SCOPE_GATES` | `T,A` | Comma-separated. Single-letter tokens are prefix matches. Multi-character tokens are exact matches. |
-| `PIER_MIN` | `40` | Lower bound (inclusive). |
-| `PIER_MAX` | `60` | Upper bound (inclusive). |
+| `PIER_MIN` | `40` | Lower bound (inclusive). Used when `PIER_RANGES` is unset. |
+| `PIER_MAX` | `60` | Upper bound (inclusive). Used when `PIER_RANGES` is unset. |
+| `PIER_RANGES` | unset | Optional override for non-contiguous pier scopes. Format: `40-60,75-85`. When set, takes precedence over `PIER_MIN`/`PIER_MAX`. Use this when a new concourse opens with piers that aren't adjacent to the existing range. |
 | `HAULOUT_LEAD_MIN` | `55` | Minutes before departure that haulout starts. |
 | `DISPLAY_TZ` | `America/New_York` | IANA timezone for shift detection and clock display. |
 | `SHIFT1_WORKED_START_HOUR` | `5` | Shift 1 start (24h, local). Label only. |
@@ -166,6 +167,7 @@ Empty-string env vars are treated as unset — defaults always kick in. (This ma
 Common Ops adjustments are repo-variable overrides, no commit needed:
 
 - **Narrow piers (e.g., during a single pier-zone test):** set `PIER_MIN`/`PIER_MAX` to a tighter range.
+- **Add a non-contiguous pier range** (e.g., new concourse opens on piers 75-85 while A keeps 40-60): set `PIER_RANGES=40-60,75-85` instead of trying to widen `PIER_MAX`.
 - **Exclude A-international (A26–A30):** set `IN_SCOPE_GATES` to an explicit list like `T,A01,A02,A03,A04,A05,A06,A07,A08,A09,A10,A11,A12,A13,A14,A15,A16,A17,A18,A19,A20,A21,A22,A23,A24,A25`.
 - **Different haulout lead time:** override `HAULOUT_LEAD_MIN`.
 - **Move shift boundaries** (e.g., Shift 1 runs 6am–3pm now): override `SHIFT1_WORKED_START_HOUR`, `SHIFT1_WORKED_END_HOUR`, etc. All shift hours are 24-hour local time per `DISPLAY_TZ`.

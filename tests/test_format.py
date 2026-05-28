@@ -49,8 +49,7 @@ def _cfg() -> Config:
         airport="ATL",
         hours_forward=12,
         in_scope_gates=("T", "A"),
-        pier_min=40,
-        pier_max=60,
+        pier_ranges=((40, 60),),
         haulout_lead_min=55,
         display_tz="America/New_York",
         shift1_worked_start_hour=5,
@@ -215,3 +214,58 @@ def test_empty_flight_list_in_shift_renders_friendly_message() -> None:
     shift = cfg.current_shift(SHIFT1_NOW)
     msg = build_message([], cfg=cfg, now_utc=SHIFT1_NOW, shift=shift)
     assert "No upcoming in-scope outbound flights" in msg
+
+
+# --------------------------------------------------------------------------- #
+# PIER_RANGES (multi-range support)
+
+def test_multi_range_pier_filter_includes_both_ranges() -> None:
+    """A two-range config (40-60 + 75-85) should include flights in either range."""
+    from flightassign_pier.config import Config
+    cfg = Config(
+        slack_bot_token="",
+        slack_channel="#test",
+        fleet_api_base="https://example.invalid",
+        airport="ATL",
+        hours_forward=12,
+        in_scope_gates=("T", "A", "C"),  # imagined C concourse online
+        pier_ranges=((40, 60), (75, 85)),
+        haulout_lead_min=55,
+        display_tz="America/New_York",
+        shift1_worked_start_hour=5,
+        shift1_worked_end_hour=14,
+        shift1_msg_start_hour=4,
+        shift2_worked_start_hour=14,
+        shift2_worked_end_hour=22,
+        shift2_msg_start_hour=13,
+        shift2_msg_end_hour=21,
+    )
+    assert cfg.pier_is_in_scope("48") is True   # in first range
+    assert cfg.pier_is_in_scope("80") is True   # in second range
+    assert cfg.pier_is_in_scope("65") is False  # gap between ranges
+    assert cfg.pier_is_in_scope("90") is False  # past second range
+
+
+def test_pier_min_max_properties_reflect_outer_bounds() -> None:
+    """pier_min/pier_max should be the outer envelope of all configured ranges."""
+    from flightassign_pier.config import Config
+    cfg = Config(
+        slack_bot_token="",
+        slack_channel="#test",
+        fleet_api_base="https://example.invalid",
+        airport="ATL",
+        hours_forward=12,
+        in_scope_gates=("T", "A"),
+        pier_ranges=((40, 60), (75, 85)),
+        haulout_lead_min=55,
+        display_tz="America/New_York",
+        shift1_worked_start_hour=5,
+        shift1_worked_end_hour=14,
+        shift1_msg_start_hour=4,
+        shift2_worked_start_hour=14,
+        shift2_worked_end_hour=22,
+        shift2_msg_start_hour=13,
+        shift2_msg_end_hour=21,
+    )
+    assert cfg.pier_min == 40
+    assert cfg.pier_max == 85

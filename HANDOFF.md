@@ -167,4 +167,62 @@ Note: this repo lives on a GitHub account that was renamed from `calebAV` to `se
 
 ---
 
+---
+
+## Adding a new concourse (B, C, D, E, F, etc.)
+
+When AeroVect Ops onboards a new concourse, you'll need to expand the gate and pier scopes. **No code change required** — it's all repo variable overrides. Steps:
+
+### 1. Confirm the new gate + pier ranges with Ops
+
+Before touching anything, get two pieces of info from the Ops GM (or by checking the Fleet API directly):
+
+- **Gate identifier(s):** typically a single letter (`B`, `C`, etc.) but sometimes specific gates (`B01`, `B02`).
+- **Pier number range that feeds the new concourse:** check by looking at Fleet API responses for outbound flights at the new gates — the `dptr_bag_pier_num` field tells you which piers.
+
+### 2. Decide whether to use a single range or multiple
+
+Two cases:
+
+**Case A — Adjacent piers.** If B concourse uses piers 61–70 (right next to A's 40–60), you can just widen the existing range. Set `PIER_MAX=70` and add `B` to `IN_SCOPE_GATES`. Done.
+
+**Case B — Non-adjacent piers.** If, say, C concourse uses piers 75–85 with no flights at piers 61–74, you do NOT want to widen `PIER_MAX` to 85 (you'd start showing irrelevant flights from piers 61–74). Use the multi-range variable instead.
+
+### 3. Set the repo variables
+
+Go to `https://github.com/servetAV/flightassign-pier/settings/variables/actions` and update:
+
+| Variable | Case A (adjacent) | Case B (non-adjacent) |
+| --- | --- | --- |
+| `IN_SCOPE_GATES` | `T,A,B` | `T,A,C` |
+| `PIER_MAX` | `70` | leave at 60 |
+| `PIER_RANGES` | leave unset | `40-60,75-85` |
+
+Reminder: `PIER_RANGES` overrides `PIER_MIN`/`PIER_MAX` if set. Format is comma-separated `start-end` pairs.
+
+### 4. Smoke-test
+
+Repo → Actions → "Post pier view to Slack" → "Run workflow" → set `dry_run` to `true` → Run.
+
+Open the log. Confirm:
+- The new gate prefix (B/C/etc.) appears in the rendered output
+- New piers show up grouped correctly
+- No "garbage" piers from outside the desired range have snuck in
+
+If the dry-run looks right, run again with `dry_run=false` to post live. From there, cron-job.org takes over.
+
+### 5. Reverse the change (if needed)
+
+If Ops decides to pause the expansion (e.g., during a soft launch), just remove the new gate letter from `IN_SCOPE_GATES` and either reset `PIER_MAX` or clear `PIER_RANGES`. Changes take effect on the next 20-minute cron tick.
+
+### Things this *doesn't* require
+
+- **No code change, no commit, no PR, no deploy.** Everything is env-driven.
+- **No restart.** GitHub Actions reads repo variables fresh on each workflow run.
+- **No coordination with engineering.** Fleet API already returns all gates and piers; you're just choosing which subset to display.
+
+If a new concourse ever requires *behavior* changes (different haulout lead times per concourse, separate Slack channels per concourse, etc.), that would be a code change. Ping a developer or use this repo as a starting point.
+
+---
+
 *Last updated: 2026-05-28 by Caleb Adams (final handoff pass).*
