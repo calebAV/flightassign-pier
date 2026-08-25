@@ -91,8 +91,11 @@ class Config:
     slack_bot_token: str = field(default_factory=lambda: _env("SLACK_BOT_TOKEN", ""))
     slack_channel: str = field(default_factory=lambda: _env("SLACK_CHANNEL", "#flight-assign-piers"))
 
+    # Production Fleet stack. Do NOT point this at beta.api.fleet.aerovect.com:
+    # the beta stack lags on dptr_gate updates (it keeps stale gate values while
+    # dptr_bag_pier_num stays correct), which makes re-gated flights look eligible.
     fleet_api_base: str = field(
-        default_factory=lambda: _env("FLEET_API_BASE", "https://beta.api.fleet.aerovect.com").rstrip("/")
+        default_factory=lambda: _env("FLEET_API_BASE", "https://api.fleet.aerovect.com").rstrip("/")
     )
     airport: str = field(default_factory=lambda: _env("AIRPORT", "ATL").upper())
     hours_forward: int = field(default_factory=lambda: _env_int("HOURS_FORWARD", 12))
