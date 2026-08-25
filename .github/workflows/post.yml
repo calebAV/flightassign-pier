@@ -44,7 +44,15 @@ jobs:
           PIER_MIN: ${{ vars.PIER_MIN }}
           PIER_MAX: ${{ vars.PIER_MAX }}
           HAULOUT_LEAD_MIN: ${{ vars.HAULOUT_LEAD_MIN }}
+          PIER_RANGES: ${{ vars.PIER_RANGES }}
           DISPLAY_TZ: ${{ vars.DISPLAY_TZ }}
+          SHIFT1_WORKED_START_HOUR: ${{ vars.SHIFT1_WORKED_START_HOUR }}
+          SHIFT1_WORKED_END_HOUR: ${{ vars.SHIFT1_WORKED_END_HOUR }}
+          SHIFT1_MSG_START_HOUR: ${{ vars.SHIFT1_MSG_START_HOUR }}
+          SHIFT2_WORKED_START_HOUR: ${{ vars.SHIFT2_WORKED_START_HOUR }}
+          SHIFT2_WORKED_END_HOUR: ${{ vars.SHIFT2_WORKED_END_HOUR }}
+          SHIFT2_MSG_START_HOUR: ${{ vars.SHIFT2_MSG_START_HOUR }}
+          SHIFT2_MSG_END_HOUR: ${{ vars.SHIFT2_MSG_END_HOUR }}
         run: |
           if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
             python -m flightassign_pier --dry-run --verbose
